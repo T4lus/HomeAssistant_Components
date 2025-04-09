@@ -1,0 +1,10 @@
+name: "UDP Server"
+description: "Raw UDP server that triggers a callback when receiving packets"
+fields:
+  - name: port
+    type: int
+    default: 54321
+    description: "UDP port to listen on"
+  - name: on_packet
+    type: lambda
+    description: "Lambda callback when a packet is received"

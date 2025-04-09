@@ -25,9 +25,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     port = entry.data.get("port")
     discovery_port = entry.data.get("discovery_port")
     discovery_keyword = entry.data.get("discovery_keyword")
+    save = entry.data.get("save")
     save_path = entry.data.get("save_path")
 
-    udp_audio_relay = UDPAudioRelay(hass, host, port, discovery_port, discovery_keyword, save_path)
+    udp_audio_relay = UDPAudioRelay(hass, host, port, discovery_port, discovery_keyword, save, save_path)
     await udp_audio_relay.start()
 
     hass.data.setdefault(DOMAIN, {})

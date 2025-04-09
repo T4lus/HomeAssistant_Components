@@ -4,6 +4,7 @@ import wave
 import os
 from collections import deque
 from datetime import datetime, timedelta
+import socket
 
 from .const import DOMAIN
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
@@ -16,7 +17,8 @@ class UDPAudioRelay:
                  port, 
                  discovery_port,
                  discovery_keyword,
-                 save_path,
+                 save=False,
+                 save_path="/media/audio",
                 ):
 
         self.hass = hass
@@ -24,6 +26,7 @@ class UDPAudioRelay:
         self.port = port
         self.discovery_port = discovery_port
         self.discovery_keyword = discovery_keyword
+        self.save = save
         self.save_path = save_path
 
         self.buffer = deque()
@@ -57,7 +60,8 @@ class UDPAudioRelay:
         # UDP sender socket (for forwarding)
         self.forward_transport, _ = await loop.create_datagram_endpoint(
             asyncio.DatagramProtocol,
-            remote_addr=None  # We send manually to each target
+            local_addr=(self.host, 0),
+            #remote_addr=None  # We send manually to each target
         )
 
         _LOGGER.info(f"UDP Audio Relay started on {self.host}:{self.port}")
@@ -68,13 +72,12 @@ class UDPAudioRelay:
     async def stop(self, event=None):
         self.transport.close()
 
-        if self.autodiscovery:
-            self.discovery_transport.close()
-            self.forward_targets.clear()
-            self.auto_discovered.clear()
+        self.discovery_transport.close()
+        self.forward_targets.clear()
+        self.auto_discovered.clear()
+        self.active_devices.clear()
 
-        if self.forward_transport:
-            self.forward_transport.close()
+        self.forward_transport.close()
 
         _LOGGER.info("UDP Audio Relay stopped")
         self.save_as_wav()
@@ -93,17 +96,18 @@ class UDPAudioRelay:
     def handle_audio_packet(self, data):
         self.buffer.append(data)
 
-        # Schedule save after inactivity
-        if self.timeout_handle:
-            self.timeout_handle.cancel()
-        self.timeout_handle = asyncio.get_event_loop().call_later(10, self.save_as_wav)
-
         # Forward to targets
         for ip, port in self.forward_targets:
             try:
                 self.forward_transport.sendto(data, (ip, port))
             except Exception as e:
                 _LOGGER.warning(f"Error forwarding to {ip}:{port} - {e}")
+
+        if self.save:
+            # Schedule save after inactivity
+            if self.timeout_handle:
+                self.timeout_handle.cancel()
+            self.timeout_handle = asyncio.get_event_loop().call_later(10, self.save_as_wav)
 
     def save_as_wav(self):
         if self.buffer:
@@ -136,15 +140,18 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
 
         ip, _ = addr
 
-        if self.receiver.discovery_keyword in message and (ip, port) not in self.udp_audio_relay.auto_discovered:
-            try:
-                port = int(message.split(":")[1])  # e.g., "HELLO_UDP_AUDIO_RELAY:4567"
-            except (IndexError, ValueError):
-                port = 4567
+        try:
+            port = int(message.split(":")[1])  # e.g., "HELLO_UDP_AUDIO_RELAY:4567"
+        except (IndexError, ValueError):
+            port = 4567
 
-            key = (ip, port)
-            self.receiver.auto_discovered.add(key)
-            self.receiver.forward_targets.append(key)
-            self.receiver.active_devices[key] = datetime.now()
-
+        key = (ip, port)
+        if self.udp_audio_relay.discovery_keyword in message and key not in self.udp_audio_relay.auto_discovered:
             _LOGGER.info(f"Discovered ESP Audio Receiver at {ip}:{port}")
+  
+            self.udp_audio_relay.auto_discovered.add(key)
+            self.udp_audio_relay.forward_targets.append(key)
+            
+        self.udp_audio_relay.active_devices[key] = datetime.now()
+
+            
