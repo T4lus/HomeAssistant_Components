@@ -1,6 +1,6 @@
 {
-    "domain": "audio_receiver",
-    "name": "UDP Audio Receiver",
+    "domain": "udp_audio_relay",
+    "name": "UDP Audio Relay",
     "codeowners": ["@T4lus"],
     "config_flow": true,
     "dependencies": [],
