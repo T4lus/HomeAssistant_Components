@@ -2,30 +2,59 @@
 
 #include "esphome.h"
 #include "esphome/core/component.h"
+#include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include <WiFiUdp.h>
 #include <vector>
 
-namespace udp_server {
+namespace esphome {
+    namespace udp_server {
 
-    class OnPacketTrigger : public esphome::Trigger<std::vector<uint8_t>> {
-        public:
-            void trigger(const std::vector<uint8_t> &data) { this->trigger_(data); }
-    };
+        class UDPServerComponent : public Component 
+        {
+            public:
+                void setup() override
+                {
+                    udp_.begin(port_);
+                    ESP_LOGI("udp_server", "Listening on UDP port %d", port_);
+                }
 
-    class UDPServerComponent : public esphome::Component {
-        public:
-            void setup() override;
-            void loop() override;
+                void loop() override 
+                {
+                    int packet_size = udp_.parsePacket();
+                    if (packet_size > 0) 
+                    {
+                        size_t len = udp_.read(reinterpret_cast<uint8_t *>(buffer_), sizeof(buffer_));
 
-            void set_port(uint16_t port);
-            void add_on_packet_callback(OnPacketTrigger *trigger);
+                        std::vector<uint8_t> vec(buffer_, buffer_ + len);
 
-        protected:
-            WiFiUDP udp_;
-            uint16_t port_{54321};
-            uint8_t buffer_[8192];
-            std::vector<OnPacketTrigger *> callbacks_;
-    };
+                        this->on_receive_callbacks_.call(vec);
 
-}  // namespace udp_server
+                        /*
+                        for (auto *cb : on_packet_callbacks_) 
+                        {
+                            cb->trigger(vec);
+                        }
+                        */
+                    }
+                }
+
+                void set_port(uint16_t port)
+                { 
+                    this->port_ = port; 
+                }
+
+                void add_on_receive_callback(std::function<void(const std::vector<uint8_t> &)> &&callback)
+                {
+                    this->on_receive_callbacks_.add(std::move(callback));
+                }
+
+            protected:
+                WiFiUDP udp_;
+                uint16_t port_{54321};
+                uint8_t buffer_[8192];
+
+                CallbackManager<void(const std::vector<uint8_t> &)> on_receive_callbacks_{};
+        };
+    }  // namespace udp_server
+}

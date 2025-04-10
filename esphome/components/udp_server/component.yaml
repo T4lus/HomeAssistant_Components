@@ -5,6 +5,6 @@ fields:
     type: int
     default: 54321
     description: "UDP port to listen on"
-  - name: on_packet
+  - name: on_receive
     type: lambda
     description: "Lambda callback when a packet is received"
